@@ -5,7 +5,7 @@ import { VideoCard } from "@/components/feed/VideoCard";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/hooks/useAuth";
 import { useFeed } from "@/hooks/useFeed";
-import { Loader2, Bell, Search, RefreshCw, Users, Sparkles } from "lucide-react";
+import { Loader2, Bell, Search, RefreshCw, Users, Sparkles, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useNotifications } from "@/hooks/useNotifications";
 import { supabase } from "@/integrations/supabase/client";
@@ -61,7 +61,6 @@ const Index = () => {
     setIsLoadingFollowing(true);
     
     try {
-      // 1. Get IDs of followed users
       const { data: follows } = await supabase
         .from("follows")
         .select("following_id")
@@ -74,7 +73,6 @@ const Index = () => {
 
       const followingIds = follows.map(f => f.following_id);
 
-      // 2. Fetch Posts
       const { data: postsData, error } = await supabase
         .from("posts")
         .select(`
@@ -89,7 +87,6 @@ const Index = () => {
 
       if (error) throw error;
 
-      // 3. Check Likes status efficiently
       if (postsData) {
         const { data: userLikes } = await supabase
           .from("post_likes")
@@ -118,26 +115,21 @@ const Index = () => {
     }
   }, [user]);
 
-  // Initial Load for Following
   useEffect(() => {
     if (feedType === "following" && user && followingPosts.length === 0) {
       fetchFollowingPosts();
     }
   }, [feedType, user, fetchFollowingPosts, followingPosts.length]);
 
-  // Handle Scroll (Infinite Loading)
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
-    // Load more when 2 screens away from bottom
     if (scrollHeight - scrollTop <= clientHeight * 2 && hasMore && !feedLoading && feedType === "forYou") {
       loadMore();
     }
   };
 
-  // Switch Feed Handler (Scrolls to top)
   const handleSwitchFeed = (type: FeedType) => {
     if (feedType === type && containerRef.current) {
-      // Se clicar na aba atual, scrolla para o topo (refresh behavior)
       containerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
     } else {
       setFeedType(type);
@@ -148,7 +140,6 @@ const Index = () => {
     if (feedType === "forYou") {
       await likePost(postId);
     } else {
-      // Otimistic UI Update for Following Tab
       setFollowingPosts(prev => prev.map(post => {
         if (post.id !== postId) return post;
         const isLiked = !post.is_liked;
@@ -159,11 +150,10 @@ const Index = () => {
         };
       }));
 
-      // Server Update
       const post = followingPosts.find(p => p.id === postId);
-      if (post?.is_liked) { // Was liked, now unliking
+      if (post?.is_liked) {
         await supabase.from("post_likes").delete().eq("post_id", postId).eq("user_id", user?.id);
-      } else { // Was unliked, now liking
+      } else {
         await supabase.from("post_likes").insert({ post_id: postId, user_id: user?.id });
       }
     }
@@ -172,10 +162,9 @@ const Index = () => {
   const currentPosts = feedType === "forYou" ? forYouPosts : followingPosts;
   const isCurrentLoading = feedType === "forYou" ? feedLoading : isLoadingFollowing;
 
-  // Loading Screen (Full)
   if (authLoading) {
     return (
-      <div className="h-[100dvh] w-full flex items-center justify-center bg-black">
+      <div className="h-[100dvh] w-full flex items-center justify-center bg-background">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
       </div>
     );
@@ -183,35 +172,31 @@ const Index = () => {
 
   return (
     <AppLayout>
-      <div className="relative h-[100dvh] w-full bg-black overflow-hidden">
+      {/* Container principal agora usa bg-background (branco/escuro dependendo do tema) */}
+      <div className="relative h-[100dvh] w-full bg-background overflow-hidden flex flex-col">
         
-        {/* --- Immersive Header --- */}
+        {/* --- Header Transparente com Glassmorphism --- */}
         <header className="absolute top-0 left-0 right-0 z-50 pt-safe-top">
-          {/* Gradient gradient for readability */}
-          <div className="absolute inset-0 h-32 bg-gradient-to-b from-black/80 via-black/40 to-transparent pointer-events-none" />
+          {/* Fundo suave em vez de preto total */}
+          <div className="absolute inset-0 h-24 bg-gradient-to-b from-background/90 to-transparent pointer-events-none" />
           
           <div className="relative flex items-center justify-between px-4 py-3">
-            {/* Live / Brand Icon (Left) */}
-            <Button 
-              variant="ghost" 
-              size="icon"
-              onClick={() => navigate("/live")}
-              className="text-white hover:bg-white/10 rounded-full w-10 h-10"
-            >
-               <div className="w-8 h-8 rounded-lg bg-white/20 backdrop-blur-md flex items-center justify-center">
-                 <Sparkles className="w-4 h-4 text-white" />
+            {/* Logo/Icon Left */}
+            <div className="flex items-center gap-2">
+               <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                 <TrendingUp className="w-5 h-5 text-primary" />
                </div>
-            </Button>
+            </div>
 
             {/* Central Tabs */}
             <div className="flex items-center gap-6">
               <button
                 onClick={() => handleSwitchFeed("following")}
                 className={cn(
-                  "text-base font-bold transition-all duration-200 drop-shadow-md",
+                  "text-base font-bold transition-all duration-200",
                   feedType === "following" 
-                    ? "text-white scale-105" 
-                    : "text-white/60 hover:text-white/80 scale-100"
+                    ? "text-foreground scale-105" 
+                    : "text-muted-foreground hover:text-foreground/80 scale-100"
                 )}
               >
                 Seguindo
@@ -219,14 +204,14 @@ const Index = () => {
                   <motion.div layoutId="tab-indicator" className="h-[3px] w-6 bg-primary rounded-full mx-auto mt-1" />
                 )}
               </button>
-              <div className="w-[1px] h-4 bg-white/20" />
+              <div className="w-[1px] h-4 bg-border" />
               <button
                 onClick={() => handleSwitchFeed("forYou")}
                 className={cn(
-                  "text-base font-bold transition-all duration-200 drop-shadow-md",
+                  "text-base font-bold transition-all duration-200",
                   feedType === "forYou" 
-                    ? "text-white scale-105" 
-                    : "text-white/60 hover:text-white/80 scale-100"
+                    ? "text-foreground scale-105" 
+                    : "text-muted-foreground hover:text-foreground/80 scale-100"
                 )}
               >
                 Para Você
@@ -241,7 +226,7 @@ const Index = () => {
               variant="ghost" 
               size="icon"
               onClick={() => navigate("/discover")}
-              className="text-white hover:bg-white/10 rounded-full w-10 h-10"
+              className="text-foreground hover:bg-muted rounded-full w-10 h-10"
             >
               <Search className="w-6 h-6 stroke-[2.5]" />
             </Button>
@@ -253,11 +238,11 @@ const Index = () => {
           {isRefreshing && (
             <motion.div
               initial={{ opacity: 0, y: 50 }}
-              animate={{ opacity: 1, y: 120 }}
+              animate={{ opacity: 1, y: 100 }}
               exit={{ opacity: 0, y: 50 }}
               className="fixed top-0 left-0 right-0 z-40 flex justify-center pointer-events-none"
             >
-              <div className="bg-primary/90 backdrop-blur text-primary-foreground px-4 py-1.5 rounded-full flex items-center gap-2 shadow-xl border border-white/10">
+              <div className="bg-primary text-primary-foreground px-4 py-1.5 rounded-full flex items-center gap-2 shadow-lg">
                 <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                 <span className="text-xs font-bold">Atualizando...</span>
               </div>
@@ -268,13 +253,13 @@ const Index = () => {
         {/* --- Video Scroll Container --- */}
         <div 
           ref={containerRef}
-          className="h-[100dvh] w-full overflow-y-scroll snap-y snap-mandatory scroll-smooth hide-scrollbar bg-black"
+          className="h-full w-full overflow-y-scroll snap-y snap-mandatory scroll-smooth hide-scrollbar bg-background"
           onScroll={handleScroll}
         >
           {isCurrentLoading && currentPosts.length === 0 ? (
             <div className="h-full w-full flex flex-col items-center justify-center gap-4">
               <Loader2 className="w-10 h-10 animate-spin text-primary" />
-              <p className="text-white/50 text-sm font-medium animate-pulse">Carregando feed...</p>
+              <p className="text-muted-foreground text-sm font-medium">Carregando feed...</p>
             </div>
           ) : currentPosts.length === 0 ? (
             // Empty States
@@ -311,8 +296,8 @@ const Index = () => {
           
           {/* Bottom Loader */}
           {feedLoading && posts && posts.length > 0 && (
-             <div className="h-10 w-full flex items-center justify-center absolute bottom-4 pointer-events-none">
-                <Loader2 className="w-5 h-5 animate-spin text-white/50" />
+             <div className="h-20 w-full flex items-center justify-center snap-align-none">
+                <Loader2 className="w-5 h-5 animate-spin text-primary" />
              </div>
           )}
         </div>
@@ -321,20 +306,20 @@ const Index = () => {
   );
 };
 
-// --- Subcomponentes de Empty State ---
+// --- Subcomponentes de Empty State (Cores corrigidas) ---
 
 const EmptyStateFollowing = ({ navigate }: { navigate: any }) => (
   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center">
-    <div className="w-20 h-20 rounded-full bg-muted/20 flex items-center justify-center mb-6 backdrop-blur-sm">
-      <Users className="w-10 h-10 text-white/80" />
+    <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center mb-6">
+      <Users className="w-10 h-10 text-muted-foreground" />
     </div>
-    <h2 className="text-2xl font-bold text-white mb-2">Siga criadores</h2>
-    <p className="text-white/60 mb-8 max-w-[260px]">
+    <h2 className="text-2xl font-bold text-foreground mb-2">Siga criadores</h2>
+    <p className="text-muted-foreground mb-8 max-w-[260px]">
       Os vídeos das pessoas que você seguir aparecerão aqui.
     </p>
     <Button 
       onClick={() => navigate("/discover")}
-      className="rounded-full px-8 h-12 font-semibold bg-primary hover:bg-primary/90 text-white border-0"
+      className="rounded-full px-8 h-12 font-semibold"
     >
       Encontrar Pessoas
     </Button>
@@ -343,16 +328,16 @@ const EmptyStateFollowing = ({ navigate }: { navigate: any }) => (
 
 const EmptyStateForYou = ({ navigate }: { navigate: any }) => (
   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center">
-    <div className="w-20 h-20 rounded-full bg-muted/20 flex items-center justify-center mb-6 backdrop-blur-sm">
-      <Sparkles className="w-10 h-10 text-white/80" />
+    <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center mb-6">
+      <Sparkles className="w-10 h-10 text-muted-foreground" />
     </div>
-    <h2 className="text-2xl font-bold text-white mb-2">Feed vazio</h2>
-    <p className="text-white/60 mb-8 max-w-[260px]">
+    <h2 className="text-2xl font-bold text-foreground mb-2">Feed vazio</h2>
+    <p className="text-muted-foreground mb-8 max-w-[260px]">
       Seja o primeiro a publicar algo incrível hoje!
     </p>
     <Button 
       onClick={() => navigate("/create")}
-      className="rounded-full px-8 h-12 font-semibold bg-white text-black hover:bg-white/90"
+      className="rounded-full px-8 h-12 font-semibold"
     >
       Criar Agora
     </Button>
