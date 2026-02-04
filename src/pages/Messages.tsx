@@ -251,3 +251,4 @@ const Messages = () => {
     </AppLayout>
   );
 };
+export default Messages;
