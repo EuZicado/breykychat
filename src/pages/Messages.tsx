@@ -12,12 +12,12 @@ import {
   Loader2, 
   Search, 
   X,
-  SquarePen, // Ícone mais parecido com o de "escrever" do Instagram
+  SquarePen, // Ícone estilo nova mensagem do Insta
   ChevronLeft
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"; // ScrollBar horizontal é útil
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"; // Importe ScrollBar se disponível no seu ui/scroll-area
 
 const Messages = () => {
   const navigate = useNavigate();
@@ -44,6 +44,7 @@ const Messages = () => {
   const filteredConversations = useMemo(() => {
     let result = [...conversations];
 
+    // Filter by search
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       result = result.filter(conv => 
@@ -52,6 +53,7 @@ const Messages = () => {
       );
     }
 
+    // Sort: unread first, then by date
     result.sort((a, b) => {
       if (a.unreadCount > 0 && b.unreadCount === 0) return -1;
       if (a.unreadCount === 0 && b.unreadCount > 0) return 1;
@@ -61,18 +63,21 @@ const Messages = () => {
     return result;
   }, [conversations, searchQuery]);
 
-  // Calculate stats (mantido para lógica interna, mas escondido visualmente se não necessário)
+  // Calculate stats (Mantido apenas para lógica interna se necessário, mas removido da UI para limpar)
   const stats = useMemo(() => {
+    const onlineCount = conversations.filter(c => 
+      c.otherUser && onlineUsers.includes(c.otherUser.id)
+    ).length;
+    
     return {
-      total: conversations.length,
-      online: conversations.filter(c => c.otherUser && onlineUsers.includes(c.otherUser.id)).length,
+      online: onlineCount,
     };
   }, [conversations, onlineUsers]);
 
   if (authLoading) {
     return (
       <AppLayout>
-        <div className="flex items-center justify-center min-h-screen">
+        <div className="flex items-center justify-center min-h-screen bg-background">
           <Loader2 className="w-8 h-8 animate-spin text-primary" />
         </div>
       </AppLayout>
@@ -93,153 +98,182 @@ const Messages = () => {
             key="list"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            exit={{ opacity: 0, x: -20 }}
-            className="flex flex-col h-screen bg-background"
+            exit={{ opacity: 0, x: -50 }} // Transição mais sutil estilo iOS
+            transition={{ duration: 0.2 }}
+            className="flex flex-col h-[100dvh] bg-background"
           >
-            {/* Instagram-style Header */}
+            {/* Instagram Style Header */}
             <header className="sticky top-0 z-40 bg-background/80 backdrop-blur-md border-b border-border/40">
-              <div className="px-4 py-3">
-                {/* Top Bar: Title & Action */}
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <h1 className="text-xl font-bold tracking-tight">
-                      {user?.username || "Direct"}
-                    </h1>
+              <div className="flex items-center justify-between px-4 h-14">
+                <div className="flex items-center gap-1 cursor-pointer">
+                  <h1 className="text-xl font-bold tracking-tight">
+                    {user?.username || "Direct"}
+                  </h1>
+                  {/* Opcional: ChevronDown aqui se quiser simular troca de conta */}
+                </div>
+                
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setShowNewConversation(true)}
+                  className="text-foreground hover:bg-muted rounded-full"
+                >
+                  <SquarePen className="w-6 h-6" strokeWidth={2.5} />
+                </Button>
+              </div>
+            </header>
+
+            {/* Main Scroll Area */}
+            <ScrollArea className="flex-1">
+              <div className="pb-20 pt-2">
+                {/* Search Bar */}
+                <div className="px-4 mb-4">
+                  <div className="relative group">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                    <Input
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Pesquisar"
+                      className="pl-9 pr-8 rounded-xl bg-muted/50 border-transparent focus:bg-background focus:border-primary/20 h-9 text-sm transition-all"
+                    />
+                    {searchQuery && (
+                      <button
+                        onClick={() => setSearchQuery("")}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-full bg-muted-foreground/20 hover:bg-muted-foreground/30"
+                      >
+                        <X className="w-3 h-3 text-muted-foreground" />
+                      </button>
+                    )}
                   </div>
-                  
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setShowNewConversation(true)}
-                    className="hover:bg-muted rounded-full"
-                  >
-                    <SquarePen className="w-6 h-6" />
-                  </Button>
                 </div>
 
-                {/* Search Bar */}
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Pesquisar"
-                    className="pl-9 pr-9 rounded-xl bg-muted/50 border-transparent focus-visible:bg-background focus-visible:border-primary h-9 text-sm transition-all"
-                  />
-                  {searchQuery && (
-                    <button
-                      onClick={() => setSearchQuery("")}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                {/* Online Users (Stories Style) */}
+                {stats.online > 0 && !searchQuery && (
+                  <div className="mb-6">
+                    <ScrollArea className="w-full whitespace-nowrap">
+                      <div className="flex px-4 gap-4 w-max">
+                        {/* Seu Próprio 'Story' (Opcional/Placeholder) */}
+                        <div className="flex flex-col items-center gap-1.5 cursor-pointer">
+                           <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center relative overflow-hidden ring-2 ring-transparent">
+                             <div className="text-2xl text-muted-foreground">+</div>
+                           </div>
+                           <span className="text-[11px] text-muted-foreground">Nota</span>
+                        </div>
+
+                        {conversations
+                          .filter(c => c.otherUser && onlineUsers.includes(c.otherUser.id))
+                          .map(conv => (
+                            <motion.button
+                              key={conv.id}
+                              whileTap={{ scale: 0.95 }}
+                              onClick={() => setSelectedConversationId(conv.id)}
+                              className="flex flex-col items-center gap-1.5 min-w-[64px]"
+                            >
+                              <div className="relative">
+                                {/* Gradiente de Story do Insta no anel externo se quiser, aqui usei verde simples */}
+                                <div className="w-16 h-16 rounded-full p-[2px] bg-gradient-to-tr from-green-400 to-green-600"> 
+                                  <div className="w-full h-full rounded-full bg-background p-[2px] overflow-hidden">
+                                    {conv.otherUser?.avatar_url ? (
+                                      <img
+                                        src={conv.otherUser.avatar_url}
+                                        alt=""
+                                        className="w-full h-full object-cover rounded-full"
+                                      />
+                                    ) : (
+                                      <div className="w-full h-full bg-muted flex items-center justify-center rounded-full text-muted-foreground font-medium">
+                                        {conv.otherUser?.display_name?.[0]?.toUpperCase()}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="absolute bottom-1 right-1 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-background z-10" />
+                              </div>
+                              <span className="text-[11px] text-foreground/80 truncate max-w-[70px]">
+                                {conv.otherUser?.display_name?.split(" ")[0]}
+                              </span>
+                            </motion.button>
+                          ))}
+                      </div>
+                      <ScrollBar orientation="horizontal" className="hidden" />
+                    </ScrollArea>
+                  </div>
+                )}
+
+                {/* List Header */}
+                <div className="px-4 mb-2 flex justify-between items-center">
+                  <span className="text-base font-semibold">Mensagens</span>
+                  <span className="text-xs text-muted-foreground cursor-pointer hover:text-primary">Solicitações</span>
+                </div>
+
+                {/* Messages List */}
+                <div className="px-2">
+                  {messagesLoading ? (
+                    <div className="flex flex-col items-center justify-center py-12 gap-2">
+                      <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                      <p className="text-xs text-muted-foreground">Carregando conversas...</p>
+                    </div>
+                  ) : filteredConversations.length === 0 ? (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="flex flex-col items-center justify-center py-12 text-center"
                     >
-                      <X className="w-4 h-4" />
-                    </button>
+                      <div className="w-20 h-20 rounded-full bg-muted/30 flex items-center justify-center mb-4">
+                        <Search className="w-8 h-8 text-muted-foreground/50" />
+                      </div>
+                      <h3 className="text-lg font-semibold mb-1">
+                        {searchQuery ? "Nenhum resultado" : "Suas mensagens"}
+                      </h3>
+                      <p className="text-sm text-muted-foreground max-w-[250px] mx-auto mb-6">
+                        {searchQuery
+                          ? "Não encontramos ninguém com esse nome."
+                          : "Envie mensagens privadas para amigos e grupos."}
+                      </p>
+                      {!searchQuery && (
+                        <Button
+                          onClick={() => setShowNewConversation(true)}
+                          variant="secondary"
+                          className="font-semibold"
+                        >
+                          Enviar mensagem
+                        </Button>
+                      )}
+                    </motion.div>
+                  ) : (
+                    <div className="space-y-0.5">
+                      {filteredConversations.map((conversation, index) => (
+                        <motion.div
+                          key={conversation.id}
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: index * 0.02 }}
+                          // Adiciona hover effect estilo desktop mas sutil
+                          className="rounded-xl overflow-hidden hover:bg-muted/40 transition-colors"
+                        >
+                          <ChatPreview
+                            id={conversation.id}
+                            displayName={conversation.otherUser?.display_name || null}
+                            username={conversation.otherUser?.username || null}
+                            avatarUrl={conversation.otherUser?.avatar_url || null}
+                            lastMessage={conversation.lastMessage?.content || null}
+                            lastMessageTime={conversation.lastMessage?.created_at || conversation.updated_at}
+                            unreadCount={conversation.unreadCount}
+                            isOnline={conversation.otherUser ? onlineUsers.includes(conversation.otherUser.id) : false}
+                            isVerified={conversation.otherUser?.is_verified || false}
+                            verificationBadge={conversation.otherUser?.verification_type || "none"}
+                            isAudioMessage={!!conversation.lastMessage?.audio_url}
+                            isStickerMessage={!!conversation.lastMessage?.sticker_url}
+                            onClick={() => setSelectedConversationId(conversation.id)}
+                          />
+                        </motion.div>
+                      ))}
+                    </div>
                   )}
                 </div>
               </div>
-
-              {/* Online Users Row ("Stories" style) */}
-              {stats.online > 0 && !searchQuery && (
-                <div className="pb-3 px-4">
-                  <ScrollArea className="w-full whitespace-nowrap">
-                    <div className="flex gap-4">
-                      {conversations
-                        .filter(c => c.otherUser && onlineUsers.includes(c.otherUser.id))
-                        .map((conv, i) => (
-                          <motion.button
-                            key={conv.id}
-                            initial={{ scale: 0, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            transition={{ delay: i * 0.05 }}
-                            whileTap={{ scale: 0.95 }}
-                            onClick={() => setSelectedConversationId(conv.id)}
-                            className="flex flex-col items-center gap-1"
-                          >
-                            <div className="relative p-0.5 rounded-full ring-2 ring-primary/20">
-                              <div className="w-14 h-14 rounded-full bg-muted overflow-hidden">
-                                {conv.otherUser?.avatar_url ? (
-                                  <img
-                                    src={conv.otherUser.avatar_url}
-                                    alt=""
-                                    className="w-full h-full object-cover"
-                                  />
-                                ) : (
-                                  <div className="w-full h-full flex items-center justify-center bg-primary/10 text-primary font-medium text-lg">
-                                    {conv.otherUser?.display_name?.[0]?.toUpperCase()}
-                                  </div>
-                                )}
-                              </div>
-                              <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full border-[3px] border-background" />
-                            </div>
-                            <span className="text-[11px] text-muted-foreground w-16 truncate text-center leading-tight">
-                              {conv.otherUser?.display_name?.split(" ")[0]}
-                            </span>
-                          </motion.button>
-                        ))}
-                    </div>
-                    <ScrollBar orientation="horizontal" className="invisible" />
-                  </ScrollArea>
-                </div>
-              )}
-            </header>
-
-            {/* Conversations List */}
-            <ScrollArea className="flex-1">
-              <div className="px-2 pb-24 pt-2">
-                {messagesLoading ? (
-                  <div className="flex justify-center py-12">
-                    <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-                  </div>
-                ) : filteredConversations.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-20 text-center px-6">
-                    <div className="w-16 h-16 rounded-full bg-muted/50 flex items-center justify-center mb-4">
-                      <Search className="w-8 h-8 text-muted-foreground/50" />
-                    </div>
-                    <p className="text-base font-semibold">Nenhuma conversa encontrada</p>
-                    <p className="text-sm text-muted-foreground mt-1 mb-6">
-                      {searchQuery ? "Tente outro termo de busca." : "Comece a conversar com seus amigos."}
-                    </p>
-                    {!searchQuery && (
-                      <Button onClick={() => setShowNewConversation(true)}>
-                        Enviar mensagem
-                      </Button>
-                    )}
-                  </div>
-                ) : (
-                  <div className="space-y-1">
-                    {/* Render list without explicit section headers for cleaner look, 
-                        but keep order (Unread on top) */}
-                    {filteredConversations.map((conversation, index) => (
-                      <motion.div
-                        key={conversation.id}
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: index * 0.02 }}
-                      >
-                        <ChatPreview
-                          id={conversation.id}
-                          displayName={conversation.otherUser?.display_name || null}
-                          username={conversation.otherUser?.username || null}
-                          avatarUrl={conversation.otherUser?.avatar_url || null}
-                          lastMessage={conversation.lastMessage?.content || null}
-                          lastMessageTime={conversation.lastMessage?.created_at || conversation.updated_at}
-                          unreadCount={conversation.unreadCount}
-                          isOnline={conversation.otherUser ? onlineUsers.includes(conversation.otherUser.id) : false}
-                          isVerified={conversation.otherUser?.is_verified || false}
-                          verificationBadge={conversation.otherUser?.verification_type || "none"}
-                          isAudioMessage={!!conversation.lastMessage?.audio_url}
-                          isStickerMessage={!!conversation.lastMessage?.sticker_url}
-                          onClick={() => setSelectedConversationId(conversation.id)}
-                          // Add specific className prop to ChatPreview if supported to allow hover effects
-                          // className="hover:bg-muted/40 rounded-xl transition-colors" 
-                        />
-                      </motion.div>
-                    ))}
-                  </div>
-                )}
-              </div>
             </ScrollArea>
 
-            {/* New Conversation Sheet */}
+            {/* New Conversation Sheet (Mantida funcionalidade, mas acionada pelo Header) */}
             <NewConversationSheet
               open={showNewConversation}
               onClose={() => setShowNewConversation(false)}
@@ -251,4 +285,5 @@ const Messages = () => {
     </AppLayout>
   );
 };
+
 export default Messages;
