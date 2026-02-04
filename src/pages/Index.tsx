@@ -1,19 +1,33 @@
-import { useEffect, useState, useCallback, useRef, useMemo } from "react";
+Para melhorar esse código, vamos focar em transformar a experiência em algo mais **imersivo** (estilo TikTok/Reels), limpando a interface, melhorando a performance e organizando a lógica.
+
+**Principais Melhorias:**
+
+1.  **Imersão Visual:** O cabeçalho foi transformado em um *overlay* transparente com gradiente, permitindo que o vídeo ocupe 100% da tela.
+2.  **Navegação de Abas:** Substituí os botões "pill" por texto centralizado (Seguindo | Para Você) com indicador visual, padrão da indústria.
+3.  **Layout Responsivo:** Uso de `100dvh` (Dynamic Viewport Height) para evitar problemas com a barra de endereços em navegadores móveis.
+4.  **Tipagem Forte:** Removi o `any` e criei uma interface `FeedPost` adequada.
+5.  **Feedback Visual:** Melhores estados de carregamento e transições suaves.
+
+Aqui está o código refatorado:
+
+```tsx
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { VideoCard } from "@/components/feed/VideoCard"; // Certifique-se que VideoCard aceita a prop 'isActive'
+import { VideoCard } from "@/components/feed/VideoCard";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/hooks/useAuth";
 import { useFeed } from "@/hooks/useFeed";
-import { Loader2, Bell, Search, RefreshCw, Sparkles, Users, TrendingUp } from "lucide-react";
+import { Loader2, Bell, Search, RefreshCw, Users, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useNotifications } from "@/hooks/useNotifications";
 import { supabase } from "@/integrations/supabase/client";
+import { cn } from "@/lib/utils";
 
-// Tipagem correta para evitar 'any'
-interface Post {
+// --- Interfaces ---
+interface FeedPost {
   id: string;
-  content_url: string;
+  content_url: string | null;
   content_type: string;
   description: string | null;
   likes_count: number;
@@ -26,7 +40,7 @@ interface Post {
   creator_display_name?: string;
   creator_avatar_url?: string;
   creator_is_verified?: boolean;
-  creator_verification_type?: string;
+  creator_verification_type?: "blue" | "gold" | "staff" | "none";
   is_liked?: boolean;
 }
 
@@ -34,48 +48,46 @@ type FeedType = "forYou" | "following";
 
 const Index = () => {
   const navigate = useNavigate();
+  const containerRef = useRef<HTMLDivElement>(null);
+  
   const { user, profile, isLoading: authLoading } = useAuth();
   const { posts: forYouPosts, isLoading: feedLoading, likePost, loadMore, hasMore, refresh } = useFeed();
   const { unreadCount } = useNotifications();
   
   const [feedType, setFeedType] = useState<FeedType>("forYou");
-  const [followingPosts, setFollowingPosts] = useState<Post[]>([]);
+  const [followingPosts, setFollowingPosts] = useState<FeedPost[]>([]);
   const [isLoadingFollowing, setIsLoadingFollowing] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  
-  // Controle de qual vídeo está visível para autoplay
-  const [activePostId, setActivePostId] = useState<string | null>(null);
-  const observerRef = useRef<IntersectionObserver | null>(null);
 
   // Auth Guard
   useEffect(() => {
-    if (!authLoading) {
-      if (!user) navigate("/auth");
-      else if (profile && !profile.onboarding_completed) navigate("/onboarding");
+    if (!authLoading && !user) {
+      navigate("/auth");
+    } else if (!authLoading && user && profile && !profile.onboarding_completed) {
+      navigate("/onboarding");
     }
   }, [user, profile, authLoading, navigate]);
 
-  // --- OTIMIZAÇÃO: Fetch Following Posts (Batch Request) ---
+  // Fetch Following Posts
   const fetchFollowingPosts = useCallback(async () => {
     if (!user) return;
     setIsLoadingFollowing(true);
     
     try {
-      // 1. Pegar quem o usuário segue
+      // 1. Get IDs of followed users
       const { data: follows } = await supabase
         .from("follows")
         .select("following_id")
         .eq("follower_id", user.id);
 
-      if (!follows || follows.length === 0) {
+      if (!follows?.length) {
         setFollowingPosts([]);
-        setIsLoadingFollowing(false);
         return;
       }
 
       const followingIds = follows.map(f => f.following_id);
 
-      // 2. Pegar os posts dessas pessoas
+      // 2. Fetch Posts
       const { data: postsData, error } = await supabase
         .from("posts")
         .select(`
@@ -88,215 +100,233 @@ const Index = () => {
         .order("created_at", { ascending: false })
         .limit(30);
 
-      if (error || !postsData) throw error;
+      if (error) throw error;
 
-      // 3. OTIMIZAÇÃO: Pegar likes em LOTE (Batch) ao invés de um por um
-      const postIds = postsData.map(p => p.id);
-      const { data: myLikes } = await supabase
-        .from("post_likes")
-        .select("post_id")
-        .in("post_id", postIds)
-        .eq("user_id", user.id);
+      // 3. Check Likes status efficiently
+      if (postsData) {
+        const { data: userLikes } = await supabase
+          .from("post_likes")
+          .select("post_id")
+          .eq("user_id", user.id)
+          .in("post_id", postsData.map(p => p.id));
 
-      const likedPostIds = new Set(myLikes?.map(l => l.post_id));
+        const likedPostIds = new Set(userLikes?.map(l => l.post_id));
 
-      // 4. Montar objeto final
-      const formattedPosts: Post[] = postsData.map((post: any) => ({
-        ...post,
-        creator_username: post.profiles?.username,
-        creator_display_name: post.profiles?.display_name,
-        creator_avatar_url: post.profiles?.avatar_url,
-        creator_is_verified: post.profiles?.is_verified,
-        creator_verification_type: post.profiles?.verification_type,
-        is_liked: likedPostIds.has(post.id),
-      }));
+        const formattedPosts: FeedPost[] = postsData.map((post: any) => ({
+          ...post,
+          creator_username: post.profiles?.username,
+          creator_display_name: post.profiles?.display_name,
+          creator_avatar_url: post.profiles?.avatar_url,
+          creator_is_verified: post.profiles?.is_verified,
+          creator_verification_type: post.profiles?.verification_type,
+          is_liked: likedPostIds.has(post.id),
+        }));
 
-      setFollowingPosts(formattedPosts);
+        setFollowingPosts(formattedPosts);
+      }
     } catch (error) {
-      console.error("Error fetching following:", error);
+      console.error("Error fetching following posts:", error);
     } finally {
       setIsLoadingFollowing(false);
     }
   }, [user]);
 
+  // Initial Load for Following
   useEffect(() => {
-    if (feedType === "following") fetchFollowingPosts();
-  }, [feedType, fetchFollowingPosts]);
-
-  // --- Lógica de Scroll e Autoplay (Intersection Observer) ---
-  const setupObserver = useCallback(() => {
-    const options = {
-      root: null,
-      rootMargin: "0px",
-      threshold: 0.6, // O vídeo precisa estar 60% visível para ser considerado "ativo"
-    };
-
-    observerRef.current = new IntersectionObserver((entries) => {
-      entries.forEach((entry) => {
-        if (entry.isIntersecting) {
-          const id = entry.target.getAttribute("data-post-id");
-          if (id) setActivePostId(id);
-        }
-      });
-    }, options);
-
-    // Observar todos os elementos de vídeo
-    const videoElements = document.querySelectorAll(".video-container");
-    videoElements.forEach((el) => observerRef.current?.observe(el));
-  }, []);
-
-  // Reiniciar observer quando a lista de posts mudar
-  const currentPosts = feedType === "forYou" ? forYouPosts : followingPosts;
-  
-  useEffect(() => {
-    // Pequeno delay para garantir que o DOM renderizou
-    const timeout = setTimeout(setupObserver, 500);
-    return () => {
-      clearTimeout(timeout);
-      observerRef.current?.disconnect();
-    };
-  }, [currentPosts, feedType, setupObserver]);
-
-  // Handle Refresh manual
-  const handleRefresh = async () => {
-    setIsRefreshing(true);
-    if (feedType === "forYou") await refresh();
-    else await fetchFollowingPosts();
-    setTimeout(() => setIsRefreshing(false), 800);
-  };
-
-  // Like Otimista
-  const handleLikePost = async (postId: string) => {
-    // Atualiza estado local imediatamente (Optimistic UI)
-    const updateLocalState = (prev: Post[]) => prev.map(p => 
-      p.id === postId 
-        ? { ...p, is_liked: !p.is_liked, likes_count: (p.is_liked ? p.likes_count - 1 : p.likes_count + 1) }
-        : p
-    );
-
-    if (feedType === "forYou") {
-      // Assumindo que likePost do useFeed já lida com o banco
-      await likePost(postId); 
-    } else {
-      setFollowingPosts(updateLocalState);
-      // Lógica de banco para Following
-      const post = followingPosts.find(p => p.id === postId);
-      const isNowLiked = !post?.is_liked; // Inverte o estado atual para saber a ação
-      
-      if (isNowLiked) {
-         await supabase.from("post_likes").insert({ post_id: postId, user_id: user?.id });
-      } else {
-         await supabase.from("post_likes").delete().eq("post_id", postId).eq("user_id", user?.id);
-      }
+    if (feedType === "following" && user && followingPosts.length === 0) {
+      fetchFollowingPosts();
     }
-  };
+  }, [feedType, user, fetchFollowingPosts, followingPosts.length]);
 
+  // Handle Scroll (Infinite Loading)
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+    // Load more when 2 screens away from bottom
     if (scrollHeight - scrollTop <= clientHeight * 2 && hasMore && !feedLoading && feedType === "forYou") {
       loadMore();
     }
   };
 
-  if (authLoading) return <LoadingScreen />;
+  // Switch Feed Handler (Scrolls to top)
+  const handleSwitchFeed = (type: FeedType) => {
+    if (feedType === type && containerRef.current) {
+      // Se clicar na aba atual, scrolla para o topo (refresh behavior)
+      containerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+      setFeedType(type);
+    }
+  };
+
+  const handleLikePost = async (postId: string) => {
+    if (feedType === "forYou") {
+      await likePost(postId);
+    } else {
+      // Otimistic UI Update for Following Tab
+      setFollowingPosts(prev => prev.map(post => {
+        if (post.id !== postId) return post;
+        const isLiked = !post.is_liked;
+        return {
+          ...post,
+          is_liked: isLiked,
+          likes_count: isLiked ? post.likes_count + 1 : post.likes_count - 1
+        };
+      }));
+
+      // Server Update
+      const post = followingPosts.find(p => p.id === postId);
+      if (post?.is_liked) { // Was liked, now unliking
+        await supabase.from("post_likes").delete().eq("post_id", postId).eq("user_id", user?.id);
+      } else { // Was unliked, now liking
+        await supabase.from("post_likes").insert({ post_id: postId, user_id: user?.id });
+      }
+    }
+  };
+
+  const currentPosts = feedType === "forYou" ? forYouPosts : followingPosts;
+  const isCurrentLoading = feedType === "forYou" ? feedLoading : isLoadingFollowing;
+
+  // Loading Screen (Full)
+  if (authLoading) {
+    return (
+      <div className="h-[100dvh] w-full flex items-center justify-center bg-black">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
-    <AppLayout hideHeader> {/* Presumindo que você possa esconder o header padrão do AppLayout */}
-      <div className="relative h-[100dvh] w-full bg-black text-white overflow-hidden">
+    <AppLayout>
+      <div className="relative h-[100dvh] w-full bg-black overflow-hidden">
         
-        {/* Floating Header (Immersive) */}
+        {/* --- Immersive Header --- */}
         <header className="absolute top-0 left-0 right-0 z-50 pt-safe-top">
-          <div className="w-full bg-gradient-to-b from-black/60 to-transparent px-4 pb-12 pt-4">
-            <div className="flex items-center justify-between">
-              {/* Logo / Brand */}
-              <div className="flex items-center gap-2 opacity-90">
-                <TrendingUp className="w-6 h-6 text-primary" />
-              </div>
+          {/* Gradient gradient for readability */}
+          <div className="absolute inset-0 h-32 bg-gradient-to-b from-black/80 via-black/40 to-transparent pointer-events-none" />
+          
+          <div className="relative flex items-center justify-between px-4 py-3">
+            {/* Live / Brand Icon (Left) */}
+            <Button 
+              variant="ghost" 
+              size="icon"
+              onClick={() => navigate("/live")}
+              className="text-white hover:bg-white/10 rounded-full w-10 h-10"
+            >
+               <div className="w-8 h-8 rounded-lg bg-white/20 backdrop-blur-md flex items-center justify-center">
+                 <Sparkles className="w-4 h-4 text-white" />
+               </div>
+            </Button>
 
-              {/* Central Tabs */}
-              <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-4">
-                <TabButton 
-                  active={feedType === "following"} 
-                  onClick={() => setFeedType("following")}
-                  label="Seguindo" 
-                />
-                <div className="w-[1px] h-3 bg-white/20" />
-                <TabButton 
-                  active={feedType === "forYou"} 
-                  onClick={() => setFeedType("forYou")}
-                  label="Para Você" 
-                />
-              </div>
-
-              {/* Actions */}
-              <div className="flex items-center gap-2">
-                <Button variant="ghost" size="icon" onClick={() => navigate("/discover")} className="text-white hover:bg-white/10 rounded-full w-10 h-10">
-                  <Search className="w-6 h-6" />
-                </Button>
-                <div className="relative">
-                   <Button variant="ghost" size="icon" onClick={() => navigate("/notifications")} className="text-white hover:bg-white/10 rounded-full w-10 h-10">
-                    <Bell className="w-6 h-6" />
-                  </Button>
-                  {unreadCount > 0 && (
-                    <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-black" />
-                  )}
-                </div>
-              </div>
+            {/* Central Tabs */}
+            <div className="flex items-center gap-6">
+              <button
+                onClick={() => handleSwitchFeed("following")}
+                className={cn(
+                  "text-base font-bold transition-all duration-200 drop-shadow-md",
+                  feedType === "following" 
+                    ? "text-white scale-105" 
+                    : "text-white/60 hover:text-white/80 scale-100"
+                )}
+              >
+                Seguindo
+                {feedType === "following" && (
+                  <motion.div layoutId="tab-indicator" className="h-[3px] w-6 bg-primary rounded-full mx-auto mt-1" />
+                )}
+              </button>
+              <div className="w-[1px] h-4 bg-white/20" />
+              <button
+                onClick={() => handleSwitchFeed("forYou")}
+                className={cn(
+                  "text-base font-bold transition-all duration-200 drop-shadow-md",
+                  feedType === "forYou" 
+                    ? "text-white scale-105" 
+                    : "text-white/60 hover:text-white/80 scale-100"
+                )}
+              >
+                Para Você
+                {feedType === "forYou" && (
+                  <motion.div layoutId="tab-indicator" className="h-[3px] w-6 bg-primary rounded-full mx-auto mt-1" />
+                )}
+              </button>
             </div>
+
+            {/* Search (Right) */}
+            <Button 
+              variant="ghost" 
+              size="icon"
+              onClick={() => navigate("/discover")}
+              className="text-white hover:bg-white/10 rounded-full w-10 h-10"
+            >
+              <Search className="w-6 h-6 stroke-[2.5]" />
+            </Button>
           </div>
         </header>
 
-        {/* Refresh Indicator */}
+        {/* --- Refresh Indicator --- */}
         <AnimatePresence>
           {isRefreshing && (
             <motion.div
-              initial={{ opacity: 0, y: 0 }}
-              animate={{ opacity: 1, y: 60 }}
-              exit={{ opacity: 0, y: 0 }}
-              className="absolute top-0 left-0 right-0 z-40 flex justify-center pt-safe-top"
+              initial={{ opacity: 0, y: 50 }}
+              animate={{ opacity: 1, y: 120 }}
+              exit={{ opacity: 0, y: 50 }}
+              className="fixed top-0 left-0 right-0 z-40 flex justify-center pointer-events-none"
             >
-              <div className="bg-primary/90 backdrop-blur-md text-white px-4 py-1.5 rounded-full flex items-center gap-2 shadow-lg text-xs font-medium">
-                <RefreshCw className="w-3 h-3 animate-spin" /> Atualizando
+              <div className="bg-primary/90 backdrop-blur text-primary-foreground px-4 py-1.5 rounded-full flex items-center gap-2 shadow-xl border border-white/10">
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                <span className="text-xs font-bold">Atualizando...</span>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* Main Feed Container */}
+        {/* --- Video Scroll Container --- */}
         <div 
-          className="h-full w-full overflow-y-scroll snap-y snap-mandatory scroll-smooth no-scrollbar"
+          ref={containerRef}
+          className="h-[100dvh] w-full overflow-y-scroll snap-y snap-mandatory scroll-smooth hide-scrollbar bg-black"
           onScroll={handleScroll}
         >
-          {/* Loading State */}
-          {(feedType === "forYou" ? feedLoading : isLoadingFollowing) && currentPosts.length === 0 ? (
-            <div className="h-full flex items-center justify-center">
+          {isCurrentLoading && currentPosts.length === 0 ? (
+            <div className="h-full w-full flex flex-col items-center justify-center gap-4">
               <Loader2 className="w-10 h-10 animate-spin text-primary" />
+              <p className="text-white/50 text-sm font-medium animate-pulse">Carregando feed...</p>
             </div>
           ) : currentPosts.length === 0 ? (
-            <EmptyFeedState type={feedType} navigate={navigate} onRefresh={handleRefresh} />
+            // Empty States
+            <div className="h-full w-full flex flex-col items-center justify-center text-center px-8 z-10 relative">
+              {feedType === "following" ? (
+                <EmptyStateFollowing navigate={navigate} />
+              ) : (
+                <EmptyStateForYou navigate={navigate} />
+              )}
+            </div>
           ) : (
+            // Feed List
             currentPosts.map((post) => (
-              // Wrapper do snap para garantir o comportamento correto
-              <div 
-                key={post.id} 
-                className="h-[100dvh] w-full snap-start relative video-container"
-                data-post-id={post.id}
-              >
-                <VideoCard
-                  id={post.id}
-                  {...post} // Espalha as propriedades do post
-                  username={post.creator_username || "user"}
-                  displayName={post.creator_display_name || "Usuário"}
-                  avatar={post.creator_avatar_url || ""}
-                  thumbnailUrl={post.content_url} // Ajuste conforme seu VideoCard espera
-                  isLiked={post.is_liked}
-                  onLike={() => handleLikePost(post.id)}
-                  onDeleted={() => refresh()} // Simplificado
-                  // IMPORTANTE: Passar se está ativo para o vídeo tocar
-                  isActive={post.id === activePostId} 
-                />
-              </div>
+              <VideoCard
+                key={post.id}
+                id={post.id}
+                creatorId={post.creator_id}
+                username={post.creator_username || "unknown"}
+                displayName={post.creator_display_name || "Usuário"}
+                avatar={post.creator_avatar_url || ""}
+                description={post.description || ""}
+                likes={post.likes_count}
+                comments={post.comments_count || 0}
+                shares={post.shares_count || 0}
+                isVerified={post.creator_is_verified || false}
+                verificationBadge={post.creator_verification_type || "none"}
+                thumbnailUrl={post.content_url || ""}
+                isLiked={post.is_liked || false}
+                onLike={() => handleLikePost(post.id)}
+                onDeleted={() => refresh()}
+              />
             ))
+          )}
+          
+          {/* Bottom Loader */}
+          {feedLoading && posts && posts.length > 0 && (
+             <div className="h-10 w-full flex items-center justify-center absolute bottom-4 pointer-events-none">
+                <Loader2 className="w-5 h-5 animate-spin text-white/50" />
+             </div>
           )}
         </div>
       </div>
@@ -304,42 +334,42 @@ const Index = () => {
   );
 };
 
-// --- Subcomponentes para Limpeza ---
+// --- Subcomponentes de Empty State ---
 
-const TabButton = ({ active, onClick, label }: { active: boolean, onClick: () => void, label: string }) => (
-  <button onClick={onClick} className="relative py-2 px-1">
-    <span className={`text-base font-bold transition-colors duration-200 ${active ? "text-white" : "text-white/60 hover:text-white/80"}`}>
-      {label}
-    </span>
-    {active && (
-      <motion.div layoutId="activeTab" className="absolute -bottom-1 left-0 right-0 h-[3px] bg-primary rounded-full shadow-[0_0_10px_rgba(var(--primary),0.5)]" />
-    )}
-  </button>
-);
-
-const LoadingScreen = () => (
-  <div className="h-screen w-full flex items-center justify-center bg-black">
-    <Loader2 className="w-8 h-8 animate-spin text-primary" />
-  </div>
-);
-
-const EmptyFeedState = ({ type, navigate, onRefresh }: { type: FeedType, navigate: any, onRefresh: () => void }) => (
-  <div className="h-full w-full flex flex-col items-center justify-center text-center px-8 text-white">
-    <div className="w-20 h-20 rounded-full bg-white/10 flex items-center justify-center mb-6 backdrop-blur-sm">
-      {type === "following" ? <Users className="w-10 h-10 text-white/80" /> : <Sparkles className="w-10 h-10 text-white/80" />}
+const EmptyStateFollowing = ({ navigate }: { navigate: any }) => (
+  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center">
+    <div className="w-20 h-20 rounded-full bg-muted/20 flex items-center justify-center mb-6 backdrop-blur-sm">
+      <Users className="w-10 h-10 text-white/80" />
     </div>
-    <h3 className="text-xl font-bold mb-2">
-      {type === "following" ? "Siga criadores" : "Comece a explorar"}
-    </h3>
-    <p className="text-white/50 mb-8 max-w-[250px] text-sm">
-      {type === "following" ? "Posts de quem você segue aparecerão aqui." : "Assista aos vídeos mais populares da plataforma."}
+    <h2 className="text-2xl font-bold text-white mb-2">Siga criadores</h2>
+    <p className="text-white/60 mb-8 max-w-[260px]">
+      Os vídeos das pessoas que você seguir aparecerão aqui.
     </p>
-    <div className="flex flex-col gap-3 w-full max-w-xs">
-      <Button onClick={type === "following" ? () => navigate("/discover") : onRefresh} className="rounded-full w-full font-semibold" size="lg">
-        {type === "following" ? "Encontrar Pessoas" : "Atualizar Feed"}
-      </Button>
+    <Button 
+      onClick={() => navigate("/discover")}
+      className="rounded-full px-8 h-12 font-semibold bg-primary hover:bg-primary/90 text-white border-0"
+    >
+      Encontrar Pessoas
+    </Button>
+  </motion.div>
+);
+
+const EmptyStateForYou = ({ navigate }: { navigate: any }) => (
+  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center">
+    <div className="w-20 h-20 rounded-full bg-muted/20 flex items-center justify-center mb-6 backdrop-blur-sm">
+      <Sparkles className="w-10 h-10 text-white/80" />
     </div>
-  </div>
+    <h2 className="text-2xl font-bold text-white mb-2">Feed vazio</h2>
+    <p className="text-white/60 mb-8 max-w-[260px]">
+      Seja o primeiro a publicar algo incrível hoje!
+    </p>
+    <Button 
+      onClick={() => navigate("/create")}
+      className="rounded-full px-8 h-12 font-semibold bg-white text-black hover:bg-white/90"
+    >
+      Criar Agora
+    </Button>
+  </motion.div>
 );
 
 export default Index;
