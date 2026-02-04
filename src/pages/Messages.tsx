@@ -10,23 +10,19 @@ import { useMessages } from "@/hooks/useMessages";
 import { usePresence } from "@/hooks/usePresence";
 import { 
   Loader2, 
-  MessageCircle, 
   Search, 
-  Plus, 
-  Settings2, 
   X,
-  Mail,
-  MailOpen
+  SquarePen, // Ícone mais parecido com o de "escrever" do Instagram
+  ChevronLeft
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Badge } from "@/components/ui/badge";
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"; // ScrollBar horizontal é útil
 
 const Messages = () => {
   const navigate = useNavigate();
   const { user, isLoading: authLoading } = useAuth();
-  const { conversations, isLoading: messagesLoading, createConversation } = useMessages();
+  const { conversations, isLoading: messagesLoading } = useMessages();
   const { onlineUsers } = usePresence();
   
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
@@ -48,7 +44,6 @@ const Messages = () => {
   const filteredConversations = useMemo(() => {
     let result = [...conversations];
 
-    // Filter by search
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       result = result.filter(conv => 
@@ -57,7 +52,6 @@ const Messages = () => {
       );
     }
 
-    // Sort: unread first, then by date
     result.sort((a, b) => {
       if (a.unreadCount > 0 && b.unreadCount === 0) return -1;
       if (a.unreadCount === 0 && b.unreadCount > 0) return 1;
@@ -67,17 +61,11 @@ const Messages = () => {
     return result;
   }, [conversations, searchQuery]);
 
-  // Calculate stats
+  // Calculate stats (mantido para lógica interna, mas escondido visualmente se não necessário)
   const stats = useMemo(() => {
-    const totalUnread = conversations.reduce((sum, c) => sum + c.unreadCount, 0);
-    const onlineCount = conversations.filter(c => 
-      c.otherUser && onlineUsers.includes(c.otherUser.id)
-    ).length;
-    
     return {
       total: conversations.length,
-      unread: totalUnread,
-      online: onlineCount,
+      online: conversations.filter(c => c.otherUser && onlineUsers.includes(c.otherUser.id)).length,
     };
   }, [conversations, onlineUsers]);
 
@@ -106,49 +94,27 @@ const Messages = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0, x: -20 }}
-            className="flex flex-col h-screen"
+            className="flex flex-col h-screen bg-background"
           >
-            {/* Header */}
-            <header className="fixed top-0 left-0 right-0 z-40 safe-top">
-              <div className="glass-strong px-4 py-3">
-                <div className="flex items-center justify-between mb-3">
+            {/* Instagram-style Header */}
+            <header className="sticky top-0 z-40 bg-background/80 backdrop-blur-md border-b border-border/40">
+              <div className="px-4 py-3">
+                {/* Top Bar: Title & Action */}
+                <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
-                    <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center">
-                      <MessageCircle className="w-5 h-5 text-primary-foreground" />
-                    </div>
-                    <div>
-                      <h1 className="text-lg font-bold">Mensagens</h1>
-                      <p className="text-xs text-muted-foreground">
-                        {stats.total} conversas
-                      </p>
-                    </div>
+                    <h1 className="text-xl font-bold tracking-tight">
+                      {user?.username || "Direct"}
+                    </h1>
                   </div>
                   
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="rounded-full"
+                    onClick={() => setShowNewConversation(true)}
+                    className="hover:bg-muted rounded-full"
                   >
-                    <Settings2 className="w-5 h-5" />
+                    <SquarePen className="w-6 h-6" />
                   </Button>
-                </div>
-
-                {/* Stats Bar */}
-                <div className="flex items-center gap-2 mb-3">
-                  <Badge variant="secondary" className="rounded-full gap-1.5">
-                    <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                    {stats.online} online
-                  </Badge>
-                  <Badge variant="secondary" className="rounded-full gap-1.5">
-                    <Mail className="w-3 h-3" />
-                    {stats.total}
-                  </Badge>
-                  {stats.unread > 0 && (
-                    <Badge variant="default" className="rounded-full gap-1.5">
-                      <MailOpen className="w-3 h-3" />
-                      {stats.unread} não lidas
-                    </Badge>
-                  )}
                 </div>
 
                 {/* Search Bar */}
@@ -157,8 +123,8 @@ const Messages = () => {
                   <Input
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Buscar conversas..."
-                    className="pl-10 pr-10 rounded-xl bg-muted/30 border-0 h-10"
+                    placeholder="Pesquisar"
+                    className="pl-9 pr-9 rounded-xl bg-muted/50 border-transparent focus-visible:bg-background focus-visible:border-primary h-9 text-sm transition-all"
                   />
                   {searchQuery && (
                     <button
@@ -170,175 +136,108 @@ const Messages = () => {
                   )}
                 </div>
               </div>
+
+              {/* Online Users Row ("Stories" style) */}
+              {stats.online > 0 && !searchQuery && (
+                <div className="pb-3 px-4">
+                  <ScrollArea className="w-full whitespace-nowrap">
+                    <div className="flex gap-4">
+                      {conversations
+                        .filter(c => c.otherUser && onlineUsers.includes(c.otherUser.id))
+                        .map((conv, i) => (
+                          <motion.button
+                            key={conv.id}
+                            initial={{ scale: 0, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            transition={{ delay: i * 0.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={() => setSelectedConversationId(conv.id)}
+                            className="flex flex-col items-center gap-1"
+                          >
+                            <div className="relative p-0.5 rounded-full ring-2 ring-primary/20">
+                              <div className="w-14 h-14 rounded-full bg-muted overflow-hidden">
+                                {conv.otherUser?.avatar_url ? (
+                                  <img
+                                    src={conv.otherUser.avatar_url}
+                                    alt=""
+                                    className="w-full h-full object-cover"
+                                  />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center bg-primary/10 text-primary font-medium text-lg">
+                                    {conv.otherUser?.display_name?.[0]?.toUpperCase()}
+                                  </div>
+                                )}
+                              </div>
+                              <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full border-[3px] border-background" />
+                            </div>
+                            <span className="text-[11px] text-muted-foreground w-16 truncate text-center leading-tight">
+                              {conv.otherUser?.display_name?.split(" ")[0]}
+                            </span>
+                          </motion.button>
+                        ))}
+                    </div>
+                    <ScrollBar orientation="horizontal" className="invisible" />
+                  </ScrollArea>
+                </div>
+              )}
             </header>
 
-            {/* Online Users Scroll */}
-            {stats.online > 0 && (
-              <div className="pt-44 px-4">
-                <ScrollArea className="w-full">
-                  <div className="flex gap-3 pb-3">
-                    {conversations
-                      .filter(c => c.otherUser && onlineUsers.includes(c.otherUser.id))
-                      .map(conv => (
-                        <motion.button
-                          key={conv.id}
-                          whileTap={{ scale: 0.95 }}
-                          onClick={() => setSelectedConversationId(conv.id)}
-                          className="flex flex-col items-center gap-1.5 min-w-[60px]"
-                        >
-                          <div className="relative">
-                            <div className="w-14 h-14 rounded-full bg-muted overflow-hidden ring-2 ring-primary/30">
-                              {conv.otherUser?.avatar_url ? (
-                                <img
-                                  src={conv.otherUser.avatar_url}
-                                  alt=""
-                                  className="w-full h-full object-cover"
-                                />
-                              ) : (
-                                <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-                                  {conv.otherUser?.display_name?.[0]?.toUpperCase() || "?"}
-                                </div>
-                              )}
-                            </div>
-                            <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-green-500 rounded-full border-2 border-background" />
-                          </div>
-                          <span className="text-[10px] text-muted-foreground truncate max-w-[60px]">
-                            {conv.otherUser?.display_name?.split(" ")[0] || "Usuário"}
-                          </span>
-                        </motion.button>
-                      ))}
-                  </div>
-                </ScrollArea>
-              </div>
-            )}
-
             {/* Conversations List */}
-            <ScrollArea className={`flex-1 ${stats.online > 0 ? "" : "pt-44"}`}>
-              <div className="px-4 pb-24">
+            <ScrollArea className="flex-1">
+              <div className="px-2 pb-24 pt-2">
                 {messagesLoading ? (
-                  <div className="flex justify-center py-16">
-                    <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                  <div className="flex justify-center py-12">
+                    <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
                   </div>
                 ) : filteredConversations.length === 0 ? (
-                  <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="flex flex-col items-center justify-center py-16 text-center"
-                  >
-                    <div className="w-20 h-20 rounded-full bg-muted/50 flex items-center justify-center mb-4">
-                      {searchQuery ? (
-                        <Search className="w-10 h-10 text-muted-foreground" />
-                      ) : (
-                        <MessageCircle className="w-10 h-10 text-primary" />
-                      )}
+                  <div className="flex flex-col items-center justify-center py-20 text-center px-6">
+                    <div className="w-16 h-16 rounded-full bg-muted/50 flex items-center justify-center mb-4">
+                      <Search className="w-8 h-8 text-muted-foreground/50" />
                     </div>
-                    <p className="text-xl font-semibold mb-2">
-                      {searchQuery ? "Nenhum resultado" : "Nenhuma conversa"}
-                    </p>
-                    <p className="text-muted-foreground mb-6 max-w-[280px]">
-                      {searchQuery
-                        ? "Tente buscar por outro nome"
-                        : "Inicie uma conversa com alguém"}
+                    <p className="text-base font-semibold">Nenhuma conversa encontrada</p>
+                    <p className="text-sm text-muted-foreground mt-1 mb-6">
+                      {searchQuery ? "Tente outro termo de busca." : "Comece a conversar com seus amigos."}
                     </p>
                     {!searchQuery && (
-                      <Button
-                        onClick={() => setShowNewConversation(true)}
-                        className="rounded-full gap-2"
-                      >
-                        <Plus className="w-4 h-4" />
-                        Nova Conversa
+                      <Button onClick={() => setShowNewConversation(true)}>
+                        Enviar mensagem
                       </Button>
                     )}
-                  </motion.div>
+                  </div>
                 ) : (
                   <div className="space-y-1">
-                    {/* Unread Section */}
-                    {filteredConversations.some(c => c.unreadCount > 0) && (
-                      <div className="mb-4">
-                        <p className="text-xs font-medium text-muted-foreground mb-2 px-1">
-                          NÃO LIDAS
-                        </p>
-                        {filteredConversations
-                          .filter(c => c.unreadCount > 0)
-                          .map((conversation, index) => (
-                            <motion.div
-                              key={conversation.id}
-                              initial={{ opacity: 0, x: -20 }}
-                              animate={{ opacity: 1, x: 0 }}
-                              transition={{ delay: index * 0.03 }}
-                            >
-                              <ChatPreview
-                                id={conversation.id}
-                                displayName={conversation.otherUser?.display_name || null}
-                                username={conversation.otherUser?.username || null}
-                                avatarUrl={conversation.otherUser?.avatar_url || null}
-                                lastMessage={conversation.lastMessage?.content || null}
-                                lastMessageTime={conversation.lastMessage?.created_at || conversation.updated_at}
-                                unreadCount={conversation.unreadCount}
-                                isOnline={conversation.otherUser ? onlineUsers.includes(conversation.otherUser.id) : false}
-                                isVerified={conversation.otherUser?.is_verified || false}
-                                verificationBadge={conversation.otherUser?.verification_type || "none"}
-                                isAudioMessage={!!conversation.lastMessage?.audio_url}
-                                isStickerMessage={!!conversation.lastMessage?.sticker_url}
-                                onClick={() => setSelectedConversationId(conversation.id)}
-                              />
-                            </motion.div>
-                          ))}
-                      </div>
-                    )}
-
-                    {/* Read Section */}
-                    {filteredConversations.some(c => c.unreadCount === 0) && (
-                      <div>
-                        {filteredConversations.some(c => c.unreadCount > 0) && (
-                          <p className="text-xs font-medium text-muted-foreground mb-2 px-1">
-                            TODAS
-                          </p>
-                        )}
-                        {filteredConversations
-                          .filter(c => c.unreadCount === 0)
-                          .map((conversation, index) => (
-                            <motion.div
-                              key={conversation.id}
-                              initial={{ opacity: 0, x: -20 }}
-                              animate={{ opacity: 1, x: 0 }}
-                              transition={{ delay: index * 0.03 }}
-                            >
-                              <ChatPreview
-                                id={conversation.id}
-                                displayName={conversation.otherUser?.display_name || null}
-                                username={conversation.otherUser?.username || null}
-                                avatarUrl={conversation.otherUser?.avatar_url || null}
-                                lastMessage={conversation.lastMessage?.content || null}
-                                lastMessageTime={conversation.lastMessage?.created_at || conversation.updated_at}
-                                unreadCount={0}
-                                isOnline={conversation.otherUser ? onlineUsers.includes(conversation.otherUser.id) : false}
-                                isVerified={conversation.otherUser?.is_verified || false}
-                                verificationBadge={conversation.otherUser?.verification_type || "none"}
-                                isAudioMessage={!!conversation.lastMessage?.audio_url}
-                                isStickerMessage={!!conversation.lastMessage?.sticker_url}
-                                onClick={() => setSelectedConversationId(conversation.id)}
-                              />
-                            </motion.div>
-                          ))}
-                      </div>
-                    )}
+                    {/* Render list without explicit section headers for cleaner look, 
+                        but keep order (Unread on top) */}
+                    {filteredConversations.map((conversation, index) => (
+                      <motion.div
+                        key={conversation.id}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: index * 0.02 }}
+                      >
+                        <ChatPreview
+                          id={conversation.id}
+                          displayName={conversation.otherUser?.display_name || null}
+                          username={conversation.otherUser?.username || null}
+                          avatarUrl={conversation.otherUser?.avatar_url || null}
+                          lastMessage={conversation.lastMessage?.content || null}
+                          lastMessageTime={conversation.lastMessage?.created_at || conversation.updated_at}
+                          unreadCount={conversation.unreadCount}
+                          isOnline={conversation.otherUser ? onlineUsers.includes(conversation.otherUser.id) : false}
+                          isVerified={conversation.otherUser?.is_verified || false}
+                          verificationBadge={conversation.otherUser?.verification_type || "none"}
+                          isAudioMessage={!!conversation.lastMessage?.audio_url}
+                          isStickerMessage={!!conversation.lastMessage?.sticker_url}
+                          onClick={() => setSelectedConversationId(conversation.id)}
+                          // Add specific className prop to ChatPreview if supported to allow hover effects
+                          // className="hover:bg-muted/40 rounded-xl transition-colors" 
+                        />
+                      </motion.div>
+                    ))}
                   </div>
                 )}
               </div>
             </ScrollArea>
-
-            {/* FAB */}
-            <motion.button
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => setShowNewConversation(true)}
-              className="fixed bottom-24 right-4 w-14 h-14 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center z-30"
-            >
-              <Plus className="w-6 h-6" />
-            </motion.button>
 
             {/* New Conversation Sheet */}
             <NewConversationSheet
@@ -352,5 +251,3 @@ const Messages = () => {
     </AppLayout>
   );
 };
-
-export default Messages;
