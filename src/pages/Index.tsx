@@ -1,16 +1,3 @@
-Para melhorar esse código, vamos focar em transformar a experiência em algo mais **imersivo** (estilo TikTok/Reels), limpando a interface, melhorando a performance e organizando a lógica.
-
-**Principais Melhorias:**
-
-1.  **Imersão Visual:** O cabeçalho foi transformado em um *overlay* transparente com gradiente, permitindo que o vídeo ocupe 100% da tela.
-2.  **Navegação de Abas:** Substituí os botões "pill" por texto centralizado (Seguindo | Para Você) com indicador visual, padrão da indústria.
-3.  **Layout Responsivo:** Uso de `100dvh` (Dynamic Viewport Height) para evitar problemas com a barra de endereços em navegadores móveis.
-4.  **Tipagem Forte:** Removi o `any` e criei uma interface `FeedPost` adequada.
-5.  **Feedback Visual:** Melhores estados de carregamento e transições suaves.
-
-Aqui está o código refatorado:
-
-```tsx
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
